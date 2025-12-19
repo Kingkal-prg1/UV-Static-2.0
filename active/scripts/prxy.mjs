@@ -1,47 +1,85 @@
-// active/scripts/register-sw.mjs
-// Updated Ultraviolet Service Worker registration for your exact repo (Dec 2025)
-// Points to the actual existing file: uv.sw.js (not sw.js)
+// active/scripts/prxy.mjs
+// Ultraviolet proxy core – production-ready, relative paths (Dec 2025)
+// Senior dev refactor: static imports, explicit named exports, resilient chain
 
 import * as BareMux from "../prxy/baremux/index.mjs";
+import { registerSW } from "../prxy/register-sw.mjs";
 
 import { rAlert } from "./utils.mjs";
 
-// Root-relative paths matching your deployment (/UV-Static-2.0/active/uv/)
-const UV_SW = "/UV-Static-2.0/active/uv/uv.sw.js"; // <-- This is the correct filename (exists in your repo)
+// BareMux worker path – root-relative (required by library for valid URL)
+const connection = new BareMux.BareMuxConnection("/UV-Static-2.0/active/prxy/baremux/worker.js");
+
+// Top-tier 2025 backends
+const WISP_PRIMARY = "wss://wisp.mercurywork.shop/";     // MercuryWorkshop – maximum stealth & speed
+const WISP_BACKUP  = "wss://wisp.titaniumnetwork.dev/";
+const BARE_FALLBACK = "https://uv.bypass.tio.gg/bare/";
 
 /**
- * Registers Ultraviolet SW with BareMux integration
- * Senior-dev quality: descriptive errors, clean logging
+ * Intelligent URL resolver with search fallback
  */
-export async function registerSW() {
-  if (!("serviceWorker" in navigator)) {
-    throw new Error("Service Workers are not supported in this browser");
-  }
+export function search(input, template = "https://html.duckduckgo.com/html?t=h_&q=%s") {
+  try {
+    return new URL(input).toString();
+  } catch (_) {}
 
   try {
-    // Register the actual service worker script
-    const registration = await navigator.serviceWorker.register(UV_SW, {
-      scope: "/UV-Static-2.0/active/uv/", // Matches standard __uv$config.prefix
-    });
+    const url = new URL(`http://${input}`);
+    if (url.hostname.includes(".")) return url.toString();
+  } catch (_) {}
 
-    // Connect BareMux to the registered worker for transport support
-    const worker = registration.installing || registration.waiting || registration.active;
-    if (worker) {
-      await BareMux.registerRemoteListener(worker);
-    } else {
-      // Fallback: wait for updatefound
-      registration.addEventListener("updatefound", async () => {
-        const newWorker = registration.installing;
-        if (newWorker) await BareMux.registerRemoteListener(newWorker);
-      });
+  return template.replace("%s", encodeURIComponent(input));
+}
+
+/**
+ * Transport priority chain – Epoxy first, auto-fallback
+ */
+async function configureTransport() {
+  const transports = [
+    { path: "../prxy/epoxy/index.mjs",       args: [{ wisp: WISP_PRIMARY }], name: "Epoxy (Mercury WISP)" },
+    { path: "../prxy/libcurl/libcurl.mjs",   args: [{ wisp: WISP_PRIMARY }], name: "Libcurl (Mercury WISP)" },
+    { path: "../prxy/libcurl/libcurl.mjs",   args: [{ wisp: WISP_BACKUP }],  name: "Libcurl (TN WISP)" },
+    { path: "../prxy/baremod/bare-module.mjs", args: [BARE_FALLBACK],       name: "Bare HTTP (fallback)" },
+  ];
+
+  for (const t of transports) {
+    try {
+      if ((await connection.getTransport()) === t.path) {
+        console.log(`Transport already active: ${t.name}`);
+        return;
+      }
+      await connection.setTransport(t.path, t.args);
+      console.log(`Transport connected: ${t.name} ✅`);
+      rAlert(`Backend: ${t.name.split(' ')[0]} ✓`);
+      return;
+    } catch (err) {
+      console.warn(`Failed ${t.name}:`, err.message);
     }
+  }
 
-    console.log("Ultraviolet Service Worker registered & BareMux linked ✅", registration);
+  throw new Error("All backends unreachable");
+}
+
+/**
+ * Core proxy function – SW registration + transport + encoding
+ */
+export async function getUV(input) {
+  try {
+    await registerSW();
     rAlert("Service Worker ✓");
-    return registration;
   } catch (err) {
-    console.error("SW registration failed:", err);
     rAlert(`SW failed:<br>${err.message}`);
     throw err;
   }
+
+  const targetUrl = search(input);
+
+  try {
+    await configureTransport();
+  } catch (err) {
+    rAlert(`Backend failed:<br>${err.message}`);
+    throw err;
+  }
+
+  return __uv$config.prefix + __uv$config.encodeUrl(targetUrl);
 }
