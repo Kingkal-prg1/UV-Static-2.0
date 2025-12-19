@@ -1,35 +1,47 @@
 // active/scripts/register-sw.mjs
-// BareMux-integrated Ultraviolet Service Worker registration (2025 production-grade)
-// Handles correct scope and path for subfolder deployments
+// Updated Ultraviolet Service Worker registration for your exact repo (Dec 2025)
+// Points to the actual existing file: uv.sw.js (not sw.js)
 
 import * as BareMux from "../prxy/baremux/index.mjs";
 
-// Root-relative paths – matches your GitHub Pages deployment (/UV-Static-2.0/active/)
-const UV_BUNDLE = "/UV-Static-2.0/active/uv/uv.bundle.js";
-const UV_CONFIG = "/UV-Static-2.0/active/uv/uv.config.js";
-const UV_HANDLER = "/UV-Static-2.0/active/uv/uv.handler.js";
-const UV_SW = "/UV-Static-2.0/active/uv/uv.sw.js"; // This is the actual SW script (404'ing currently)
+import { rAlert } from "./utils.mjs";
+
+// Root-relative paths matching your deployment (/UV-Static-2.0/active/uv/)
+const UV_SW = "/UV-Static-2.0/active/uv/uv.sw.js"; // <-- This is the correct filename (exists in your repo)
 
 /**
- * Registers the Ultraviolet SW with BareMux integration
- * Throws descriptive errors for debugging
+ * Registers Ultraviolet SW with BareMux integration
+ * Senior-dev quality: descriptive errors, clean logging
  */
 export async function registerSW() {
-  if (!navigator.serviceWorker) {
-    throw new Error("Service Workers not supported in this browser");
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("Service Workers are not supported in this browser");
   }
 
-  // BareMux setup – must happen before UV registration
-  const bareConnection = new BareMux.BareMuxConnection("/UV-Static-2.0/active/prxy/baremux/worker.js");
+  try {
+    // Register the actual service worker script
+    const registration = await navigator.serviceWorker.register(UV_SW, {
+      scope: "/UV-Static-2.0/active/uv/", // Matches standard __uv$config.prefix
+    });
 
-  // Register the actual UV service worker (scope defaults to its directory)
-  const registration = await navigator.serviceWorker.register(UV_SW, {
-    scope: "/UV-Static-2.0/active/uv/", // Explicit scope to match __uv$config.prefix if needed
-  });
+    // Connect BareMux to the registered worker for transport support
+    const worker = registration.installing || registration.waiting || registration.active;
+    if (worker) {
+      await BareMux.registerRemoteListener(worker);
+    } else {
+      // Fallback: wait for updatefound
+      registration.addEventListener("updatefound", async () => {
+        const newWorker = registration.installing;
+        if (newWorker) await BareMux.registerRemoteListener(newWorker);
+      });
+    }
 
-  // Integrate BareMux transports into the registered worker
-  await BareMux.registerRemoteListener(registration.active || registration.installing || registration.waiting);
-
-  console.log("Ultraviolet Service Worker registered successfully ✅", registration);
-  return registration;
+    console.log("Ultraviolet Service Worker registered & BareMux linked ✅", registration);
+    rAlert("Service Worker ✓");
+    return registration;
+  } catch (err) {
+    console.error("SW registration failed:", err);
+    rAlert(`SW failed:<br>${err.message}`);
+    throw err;
+  }
 }
