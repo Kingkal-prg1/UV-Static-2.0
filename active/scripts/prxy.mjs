@@ -1,30 +1,22 @@
 // active/scripts/prxy.mjs
-// Ultraviolet proxy core – fully dynamic, resilient transport chain (2025-ready)
-// Author: Veteran front-end dev – zero hardcoding, maximum uptime
+// Ultraviolet proxy core – resilient transport chain (Dec 2025 ready)
+// Hardcoded relative paths for static import safety & performance
 
-// Dynamic base path resolution – works everywhere without edits
-const currentUrl = new URL(import.meta.url);
-const basePath = currentUrl.pathname
-  .split('/')
-  .slice(0, -2) // Remove '/scripts/prxy.mjs'
-  .join('/') + '/active';
-
-// Dynamic imports for BareMux and registerSW
-import * as BareMux from `${basePath}/prxy/baremux/index.mjs`;
-import { registerSW } from `${basePath}/prxy/register-sw.mjs`; // Safe – if file missing, modern UV handles gracefully
+import * as BareMux from "../prxy/baremux/index.mjs";
+import { registerSW } from "../prxy/register-sw.mjs"; // Harmless if missing in modern setups
 
 import { rAlert } from "./utils.mjs";
 
-// BareMux connection (worker lives in same folder)
-const connection = new BareMux.BareMuxConnection(`${basePath}/prxy/baremux/worker.js`);
+// Worker is in the same prxy folder
+const connection = new BareMux.BareMuxConnection("../prxy/baremux/worker.js");
 
-// Current stable public backends (Dec 2025)
-const WISP_PRIMARY = "wss://wisp.mercurywork.shop/";     // MercuryWorkshop official – fastest, most reliable
-const WISP_BACKUP  = "wss://wisp.titaniumnetwork.dev/";  // TN fallback
-const BARE_FALLBACK = "https://uv.bypass.tio.gg/bare/";  // Rock-solid public Bare v3
+// Stable public backends (2025)
+const WISP_PRIMARY = "wss://wisp.mercurywork.shop/";     // MercuryWorkshop – fastest & most reliable
+const WISP_BACKUP  = "wss://wisp.titaniumnetwork.dev/";  // Solid secondary
+const BARE_FALLBACK = "https://uv.bypass.tio.gg/bare/";  // Always-up public Bare v3
 
 /**
- * Smart URL resolver with DuckDuckGo search fallback
+ * Smart URL resolver (DuckDuckGo search fallback)
  */
 export function search(input, template = "https://html.duckduckgo.com/html?t=h_&q=%s") {
   try {
@@ -40,70 +32,49 @@ export function search(input, template = "https://html.duckduckgo.com/html?t=h_&
 }
 
 /**
- * Prioritized transport setup with graceful fallbacks
+ * Prioritized transport chain with user feedback
  */
 async function configureTransport() {
   const transports = [
-    {
-      path: `${basePath}/prxy/epoxy/index.mjs`,
-      args: [{ wisp: WISP_PRIMARY }],
-      name: "Epoxy (Mercury WISP)",
-    },
-    {
-      path: `${basePath}/prxy/libcurl/libcurl.mjs`,
-      args: [{ wisp: WISP_PRIMARY }],
-      name: "Libcurl (Mercury WISP)",
-    },
-    {
-      path: `${basePath}/prxy/libcurl/libcurl.mjs`,
-      args: [{ wisp: WISP_BACKUP }],
-      name: "Libcurl (TN WISP backup)",
-    },
-    // Bare-as-module fallback (no WebSocket needed)
-    {
-      path: `${basePath}/prxy/baremod/bare-module.mjs`, // Adjust if your fork uses different name
-      args: [BARE_FALLBACK],
-      name: "Bare HTTP (public fallback)",
-    },
+    { path: "../prxy/epoxy/index.mjs",       args: [{ wisp: WISP_PRIMARY }], name: "Epoxy (Mercury WISP)" },
+    { path: "../prxy/libcurl/libcurl.mjs",   args: [{ wisp: WISP_PRIMARY }], name: "Libcurl (Mercury WISP)" },
+    { path: "../prxy/libcurl/libcurl.mjs",   args: [{ wisp: WISP_BACKUP }],  name: "Libcurl (TN WISP backup)" },
+    { path: "../prxy/baremod/bare-module.mjs", args: [BARE_FALLBACK],       name: "Bare HTTP (public)" }, // Adjust filename if different in your fork
   ];
 
   for (const t of transports) {
     try {
-      const current = await connection.getTransport();
-      if (current === t.path) {
-        console.log(`Transport active: ${t.name}`);
+      if ((await connection.getTransport()) === t.path) {
+        console.log(`Transport already active: ${t.name}`);
         return true;
       }
 
       await connection.setTransport(t.path, t.args);
-      console.log(`Transport connected: ${t.name} ✅`);
+      console.log(`Connected via ${t.name} ✅`);
       rAlert(`Backend: ${t.name.split(' ')[0]} ✓`);
       return true;
     } catch (err) {
-      console.warn(`Transport failed (${t.name}):`, err.message);
+      console.warn(`Failed ${t.name}:`, err.message);
     }
   }
 
-  throw new Error("All backends unreachable");
+  throw new Error("All backends unreachable – check network");
 }
 
 /**
  * Main proxy entry point
  */
 export async function getUV(input) {
-  // 1. Register Ultraviolet service worker
   try {
     await registerSW();
-    rAlert("Service Worker registered ✓");
+    rAlert("Service Worker ✓");
   } catch (err) {
     rAlert(`SW failed:<br>${err.message}`);
     throw err;
   }
 
-  // 2. Resolve target URL
   const targetUrl = search(input);
 
-  // 3. Ensure transport is active
   try {
     await configureTransport();
   } catch (err) {
@@ -111,7 +82,5 @@ export async function getUV(input) {
     throw err;
   }
 
-  // 4. Encode via Ultraviolet
-  const encoded = __uv$config.prefix + __uv$config.encodeUrl(targetUrl);
-  return encoded;
+  return __uv$config.prefix + __uv$config.encodeUrl(targetUrl);
 }
