@@ -1,27 +1,24 @@
 // active/uv/uv.sw.js
-// Modern Ultraviolet Service Worker with BareMux support (2025)
+// Modern Ultraviolet Service Worker with full BareMux integration (2025 standard)
+// Compatible with public Bare servers and local transports
 
-import { BareMux } from "@mercuryworkshop/bare-mux"; // If bundled, or assume global
+importScripts("uv.bundle.js");
+importScripts("uv.config.js"); // If separate; adjust if bundled
+import { BareMux } from "@mercuryworkshop/bare-mux"; // Assumes bundled or global
 
+const uv = new UVServiceWorker();
 const baremux = new BareMux();
 
-self.addEventListener("fetch", event => {
+self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
-      if (await baremux.shouldRoute(event.request)) {
+      if (baremux.shouldRoute(event.request)) {
         return await baremux.route(event.request);
       }
-      return await fetch(event.request);
+      if (uv.route(event.request)) {
+        return await uv.fetch(event);
+      }
+      return fetch(event.request);
     })()
   );
-});
-
-// Standard UV setup (your existing uv.sw.js logic here, or import uv bundle if separate)
-importScripts("uv.bundle.js"); // If you have separate bundle
-const uv = new UVServiceWorker();
-
-self.addEventListener("fetch", event => {
-  if (uv.route(event.request)) {
-    event.respondWith(uv.fetch(event));
-  }
 });
