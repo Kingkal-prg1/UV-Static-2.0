@@ -1,48 +1,19 @@
-// check.js – Robust backend status checker (2025 edition)
-// Replaces dead RHW ping with WISP connectivity + fallback Bare test
+// Old dead code – RHW is gone forever
+// fetch('https://axess.rhw.one/ping', { method: 'POST' })...
 
-async function checkServiceStatus() {
-  const statusElement = document.getElementById('status'); // Adjust selector if needed
-  const PRIMARY_WISP = "wss://wisp.mercurywork.shop/"; // Official MercuryWorkshop – rock solid in 2025
-
+// Replace with modern WISP test if you want status
+async function checkStatus() {
   try {
-    // Step 1: Test WISP connectivity (opens WS, sends ping frame)
-    const ws = new WebSocket(PRIMARY_WISP);
-    await new Promise((resolve, reject) => {
-      ws.onopen = resolve;
-      ws.onerror = () => reject(new Error("WISP connection failed"));
-      ws.onclose = () => reject(new Error("WISP closed early"));
-      setTimeout(() => reject(new Error("WISP timeout")), 5000);
+    const ws = new WebSocket('wss://wisp.mercurywork.shop/');
+    await new Promise((res, rej) => {
+      ws.onopen = res;
+      ws.onerror = rej;
+      setTimeout(rej, 4000);
     });
     ws.close();
-    updateStatus("online", "WISP ✓ (MercuryWorkshop)");
-    console.log("Backend status: WISP online");
-    return true;
-  } catch (err) {
-    console.warn("WISP unreachable:", err.message);
-  }
-
-  try {
-    // Step 2: Fallback – test a public Bare server (no CORS needed if same-origin proxy works)
-    const bareTest = await fetch("https://uv.bypass.tio.gg/bare/v1/", { method: "HEAD" });
-    if (bareTest.ok) {
-      updateStatus("online", "Bare fallback ✓");
-      return true;
-    }
-  } catch (_) {}
-
-  // All failed
-  updateStatus("offline", "No backend reachable");
-  console.error("All backends down");
-  return false;
-}
-
-function updateStatus(state, message) {
-  if (statusElement) {
-    statusElement.textContent = message;
-    statusElement.className = state; // e.g., 'online' or 'offline' for CSS
+    console.log('Backend: Mercury WISP ✓');
+  } catch (_) {
+    console.warn('Backend check failed – proxy may still work via fallback');
   }
 }
-
-// Run on load
-document.addEventListener("DOMContentLoaded", checkServiceStatus);
+checkStatus();
